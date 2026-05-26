@@ -686,7 +686,7 @@ exportBtn.addEventListener(
           colorSpace: "srgb", 
           willReadFrequently: true 
         });
-        
+
       octx.imageSmoothingEnabled = 
         true; 
       octx.imageSmoothingQuality = 
@@ -737,10 +737,10 @@ exportBtn.addEventListener(
           (resolve) => {
 
             out.toBlob(
-              (blob) ={
+              (blob) => {
               resolve(blob);
-              }
-              "image/png"
+              },
+              "image/png",
               1.0
             );
           }
