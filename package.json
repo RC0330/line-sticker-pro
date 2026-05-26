@@ -1,0 +1,20 @@
+{
+  "name": "line-sticker-ai",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.5.2",
+    "@xenova/transformers": "^2.17.2",
+    "file-saver": "^2.0.5",
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "vite": "^5.4.10",
+    "vite-plugin-pwa": "^1.3.0"
+  }
+}
