@@ -680,8 +680,25 @@ exportBtn.addEventListener(
       out.width = width;
       out.height = height;
 
-      const octx =
-        out.getContext("2d");
+      const octx = 
+        out.getContext("2d", { 
+          alpha: true, 
+          colorSpace: "srgb", 
+          willReadFrequently: true 
+        });
+        
+      octx.imageSmoothingEnabled = 
+        true; 
+      octx.imageSmoothingQuality = 
+        "high";
+
+      // ===== 透明背景 =====
+      octx.clearRect( 
+        0, 
+        0, 
+        out.width, 
+        out.height 
+      );
 
       const sx =
         (box.x /
@@ -720,8 +737,11 @@ exportBtn.addEventListener(
           (resolve) => {
 
             out.toBlob(
-              resolve,
+              (blob) ={
+              resolve(blob);
+              }
               "image/png"
+              1.0
             );
           }
         );
