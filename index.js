@@ -3,27 +3,12 @@ import "./style.css";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
 
-// ===== PWA =====
-
-if ("serviceWorker" in navigator) {
-
-  window.addEventListener(
-    "load",
-    () => {
-
-      navigator.serviceWorker.register(
-        "/sw.js"
-      );
-    }
-  );
-}
+import cv from "@techstark/opencv-js";
 
 // ===== App =====
 
 const app =
-  document.querySelector(
-    "#app"
-  );
+  document.querySelector("#app");
 
 app.innerHTML = `
 
@@ -113,6 +98,11 @@ const addBtn =
     "addBtn"
   );
 
+const reanalyzeBtn =
+  document.getElementById(
+    "reanalyzeBtn"
+  );
+
 const exportBtn =
   document.getElementById(
     "exportBtn"
@@ -136,6 +126,12 @@ const results =
 let image = null;
 
 let cropBoxes = [];
+
+let selectedBoxes = [];
+
+let selecting = false;
+
+let selectionRect = null;
 
 let dragging = -1;
 let resizing = -1;
@@ -174,8 +170,6 @@ upload.addEventListener(
             ev.target.result
           );
 
-        // ===== 保持比例 =====
-
         const maxWidth = 1400;
 
         const scale =
@@ -195,8 +189,6 @@ upload.addEventListener(
 
         cropBoxes = [];
 
-        autoDetect();
-
         draw();
       };
 
@@ -204,7 +196,7 @@ upload.addEventListener(
   }
 );
 
-// ===== Image =====
+// ===== Load Image =====
 
 function loadImage(src) {
 
@@ -222,62 +214,204 @@ function loadImage(src) {
   );
 }
 
-// ===== AI Detect =====
+// ===== OpenCV AI Detect =====
 
-function autoDetect() {
+async function autoDetect() {
 
   if (!image)
     return;
 
-  cropBoxes = [];
+  statusText.innerText =
+    "OpenCV AI 分析中...";
 
-  const cols = 4;
-  const rows = 4;
+  try {
 
-  const gap = 20;
+    cropBoxes = [];
 
-  const w =
-    canvas.width /
-      cols -
-    gap;
+    // ===== temp canvas =====
 
-  const h =
-    canvas.height /
-      rows -
-    gap;
+    const temp =
+      document.createElement(
+        "canvas"
+      );
 
-  for (
-    let y = 0;
-    y < rows;
-    y++
-  ) {
+    temp.width =
+      canvas.width;
+
+    temp.height =
+      canvas.height;
+
+    const tctx =
+      temp.getContext("2d");
+
+    tctx.drawImage(
+      image,
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
+
+    // ===== OpenCV =====
+
+    const src =
+      cv.imread(temp);
+
+    const gray =
+      new cv.Mat();
+
+    const thresh =
+      new cv.Mat();
+
+    const contours =
+      new cv.MatVector();
+
+    const hierarchy =
+      new cv.Mat();
+
+    // ===== grayscale =====
+
+    cv.cvtColor(
+      src,
+      gray,
+      cv.COLOR_RGBA2GRAY,
+      0
+    );
+
+    // ===== threshold =====
+
+    cv.threshold(
+
+      gray,
+
+      thresh,
+
+      240,
+
+      255,
+
+      cv.THRESH_BINARY_INV
+    );
+
+    // ===== morphology =====
+
+    const kernel =
+      cv.Mat.ones(
+        3,
+        3,
+        cv.CV_8U
+      );
+
+    cv.morphologyEx(
+
+      thresh,
+
+      thresh,
+
+      cv.MORPH_CLOSE,
+
+      kernel
+    );
+
+    // ===== contours =====
+
+    cv.findContours(
+
+      thresh,
+
+      contours,
+
+      hierarchy,
+
+      cv.RETR_EXTERNAL,
+
+      cv.CHAIN_APPROX_SIMPLE
+    );
+
+    // ===== detect =====
 
     for (
-      let x = 0;
-      x < cols;
-      x++
+      let i = 0;
+      i < contours.size();
+      i++
     ) {
+
+      const cnt =
+        contours.get(i);
+
+      const rect =
+        cv.boundingRect(cnt);
+
+      // ===== filter =====
+
+      if (
+        rect.width < 40 ||
+        rect.height < 40
+      ) continue;
+
+      // ===== ratio =====
+
+      const ratio =
+        rect.width /
+        rect.height;
+
+      if (
+        ratio < 0.2 ||
+        ratio > 5
+      ) continue;
 
       cropBoxes.push({
 
-        x:
-          x *
-            (w + gap) +
-          gap / 2,
+        x: rect.x,
+        y: rect.y,
 
-        y:
-          y *
-            (h + gap) +
-          gap / 2,
+        width:
+          rect.width,
 
-        width: w,
-        height: h
+        height:
+          rect.height
       });
     }
-  }
 
-  statusText.innerText =
-    `已建立 ${cropBoxes.length} 個貼圖框`;
+    // ===== sort =====
+
+    cropBoxes.sort(
+      (a, b) => {
+
+        if (
+          Math.abs(
+            a.y - b.y
+          ) < 50
+        ) {
+
+          return a.x - b.x;
+        }
+
+        return a.y - b.y;
+      }
+    );
+
+    // ===== cleanup =====
+
+    src.delete();
+    gray.delete();
+    thresh.delete();
+    contours.delete();
+    hierarchy.delete();
+
+    statusText.innerText =
+      `AI偵測完成：
+      ${cropBoxes.length} 個貼圖`;
+
+    draw();
+
+  } catch(err) {
+
+    console.error(err);
+
+    statusText.innerText =
+      "AI分析失敗";
+  }
 }
 
 // ===== Draw =====
@@ -295,53 +429,152 @@ function draw() {
     return;
 
   ctx.drawImage(
+
     image,
+
     0,
     0,
+
     canvas.width,
     canvas.height
   );
 
   cropBoxes.forEach(
-    (box) => {
+  (box, index) => {
 
-      ctx.strokeStyle =
-        "#00ff88";
+    const selected =
+      selectedBoxes.includes(
+        index
+      );
 
-      ctx.lineWidth = 3;
+    // ===== box =====
 
-      ctx.strokeRect(
+    ctx.strokeStyle =
+      selected
+        ? "#00ffff"
+        : "#00ff88";
+
+    ctx.lineWidth =
+      selected ? 5 : 3;
+
+    ctx.strokeRect(
+
+      box.x,
+      box.y,
+
+      box.width,
+      box.height
+    );
+
+    // ===== overlay =====
+
+    if (selected) {
+
+      ctx.fillStyle =
+        "rgba(0,255,255,0.12)";
+
+      ctx.fillRect(
+
         box.x,
         box.y,
+
         box.width,
         box.height
       );
-
-      // ===== Handle =====
-
-      ctx.beginPath();
-
-      ctx.arc(
-        box.x +
-          box.width,
-        box.y +
-          box.height,
-        handleSize / 2,
-        0,
-        Math.PI * 2
-      );
-
-      ctx.fillStyle =
-        "#ffffff";
-
-      ctx.fill();
-
-      ctx.strokeStyle =
-        "#000";
-
-      ctx.stroke();
     }
+
+    // ===== resize =====
+
+    ctx.beginPath();
+
+    ctx.arc(
+
+      box.x +
+        box.width,
+
+      box.y +
+        box.height,
+
+      handleSize / 2,
+
+      0,
+      Math.PI * 2
+    );
+
+    ctx.fillStyle =
+      "#ffffff";
+
+    ctx.fill();
+
+    ctx.strokeStyle =
+      "#000";
+
+    ctx.stroke();
+
+    // ===== delete X =====
+
+    const xSize = 28;
+
+    ctx.fillStyle =
+      "#ff3b30";
+
+    ctx.fillRect(
+
+      box.x - 14,
+      box.y - 14,
+
+      xSize,
+      xSize
+    );
+
+    ctx.fillStyle =
+      "#fff";
+
+    ctx.font =
+      "20px sans-serif";
+
+    ctx.textAlign =
+      "center";
+
+    ctx.textBaseline =
+      "middle";
+
+    ctx.fillText(
+
+      "×",
+
+      box.x,
+      box.y + 1
+    );
+  }
+);
+
+// ===== selection rect =====
+
+if (
+  selecting &&
+  selectionRect
+) {
+
+  ctx.strokeStyle =
+    "#00ffff";
+
+  ctx.lineWidth = 2;
+
+  ctx.setLineDash([8]);
+
+  ctx.strokeRect(
+
+    selectionRect.x,
+    selectionRect.y,
+
+    selectionRect.width,
+    selectionRect.height
   );
+
+  ctx.setLineDash([]);
+}
+
 }
 
 // ===== Position =====
@@ -382,10 +615,16 @@ canvas.addEventListener(
     const pos =
       getPos(e);
 
+     // ===== reset =====
+
+   if (!e.shiftKey) {
+
+      selectedBoxes = [];
+    }
+
     for (
       let i =
-        cropBoxes.length -
-        1;
+        cropBoxes.length - 1;
       i >= 0;
       i--
     ) {
@@ -393,7 +632,37 @@ canvas.addEventListener(
       const box =
         cropBoxes[i];
 
-      // ===== Resize =====
+      // ===== delete button =====
+
+      if (
+
+        pos.x >
+          box.x - 14 &&
+
+        pos.x <
+          box.x + 14 &&
+
+        pos.y >
+          box.y - 14 &&
+
+        pos.y <
+          box.y + 14
+
+      ) {
+
+        cropBoxes.splice(i, 1);
+
+        selectedBoxes =
+          selectedBoxes.filter(
+            (v) => v !== i
+          );
+
+        draw();
+
+        return;
+      }
+
+      // ===== resize =====
 
       const dx =
         pos.x -
@@ -406,11 +675,12 @@ canvas.addEventListener(
           box.height);
 
       if (
+
         Math.sqrt(
           dx * dx +
-            dy * dy
-        ) <
-        handleSize
+          dy * dy
+        ) < handleSize
+
       ) {
 
         resizing = i;
@@ -427,21 +697,30 @@ canvas.addEventListener(
         return;
       }
 
-      // ===== Drag =====
+      // ===== drag =====
 
       if (
 
         pos.x > box.x &&
         pos.x <
           box.x +
-            box.width &&
+          box.width &&
 
         pos.y > box.y &&
         pos.y <
           box.y +
-            box.height
+          box.height
 
       ) {
+
+      // ===== select =====
+
+      if (
+        !selectedBoxes.includes(i)
+      ) {
+
+        selectedBoxes.push(i);
+      }
 
         dragging = i;
 
@@ -452,6 +731,22 @@ canvas.addEventListener(
           pos.y - box.y;
 
         return;
+
+        // ===== group selection =====
+
+        selecting = true;
+
+        selectionRect = {
+
+          x: pos.x,
+          y: pos.y,
+
+          width: 0,
+          height: 0
+        };
+
+        startX = pos.x;
+        startY = pos.y;
       }
     }
   }
@@ -464,7 +759,25 @@ canvas.addEventListener(
     const pos =
       getPos(e);
 
-    // ===== Drag =====
+    // ===== group select =====
+
+    if (
+      selecting &&
+      selectionRect
+    ) {
+
+      selectionRect.width =
+        pos.x - startX;
+
+      selectionRect.height =
+        pos.y - startY;
+
+      draw();
+
+      return;
+    } 
+
+    // ===== drag =====
 
     if (dragging !== -1) {
 
@@ -482,7 +795,7 @@ canvas.addEventListener(
       draw();
     }
 
-    // ===== Resize =====
+    // ===== resize =====
 
     if (resizing !== -1) {
 
@@ -495,16 +808,14 @@ canvas.addEventListener(
         Math.max(
           50,
           startWidth +
-            (pos.x -
-              startX)
+          (pos.x - startX)
         );
 
       box.height =
         Math.max(
           50,
           startHeight +
-            (pos.y -
-              startY)
+          (pos.y - startY)
         );
 
       draw();
@@ -516,73 +827,190 @@ window.addEventListener(
   "mouseup",
   () => {
 
+    // ===== group selection =====
+
+    if (
+      selecting &&
+      selectionRect
+    ) {
+
+      const x1 =
+        Math.min(
+          selectionRect.x,
+          selectionRect.x +
+          selectionRect.width
+        );
+
+      const y1 =
+        Math.min(
+          selectionRect.y,
+          selectionRect.y +
+          selectionRect.height
+        );
+
+      const x2 =
+        Math.max(
+          selectionRect.x,
+          selectionRect.x +
+          selectionRect.width
+        );
+
+      const y2 =
+        Math.max(
+          selectionRect.y,
+          selectionRect.y +
+          selectionRect.height
+        );
+
+      selectedBoxes = [];
+
+      cropBoxes.forEach(
+        (box, index) => {
+
+          if (
+
+            box.x >= x1 &&
+            box.y >= y1 &&
+
+            box.x +
+              box.width <= x2 &&
+
+            box.y +
+              box.height <= y2
+
+          ) {
+
+            selectedBoxes.push(
+              index
+            );
+          }
+        }
+      );
+    }
+
     dragging = -1;
     resizing = -1;
+
+    selecting = false;
+
+    selectionRect = null;
+
+    draw();
   }
 );
 
-// ===== Touch =====
+// ===== Double Click Delete =====
+
+canvas.addEventListener(
+  "dblclick",
+  (e) => {
+
+    const pos =
+      getPos(e);
+
+    for (
+      let i =
+        cropBoxes.length - 1;
+      i >= 0;
+      i--
+    ) {
+
+      const box =
+        cropBoxes[i];
+
+      if (
+
+        pos.x > box.x &&
+        pos.x <
+          box.x + box.width &&
+
+        pos.y > box.y &&
+        pos.y <
+          box.y + box.height
+
+      ) {
+
+        cropBoxes.splice(i, 1);
+
+        draw();
+
+        statusText.innerText =
+          `已刪除裁切框`;
+
+        return;
+      }
+    }
+  }
+);
+
+// ===== Long Press Delete =====
+
+let touchTimer = null;
 
 canvas.addEventListener(
   "touchstart",
   (e) => {
 
-    e.preventDefault();
-
     const touch =
       e.touches[0];
 
-    canvas.dispatchEvent(
-      new MouseEvent(
-        "mousedown",
-        {
+    const rect =
+      canvas.getBoundingClientRect();
 
-          clientX:
-            touch.clientX,
+    const x =
+      (touch.clientX - rect.left) *
+      (canvas.width / rect.width);
 
-          clientY:
-            touch.clientY
+    const y =
+      (touch.clientY - rect.top) *
+      (canvas.height / rect.height);
+
+    touchTimer =
+      setTimeout(() => {
+
+        for (
+          let i =
+            cropBoxes.length - 1;
+          i >= 0;
+          i--
+        ) {
+
+          const box =
+            cropBoxes[i];
+
+          if (
+
+            x > box.x &&
+            x <
+              box.x + box.width &&
+
+            y > box.y &&
+            y <
+              box.y + box.height
+
+          ) {
+
+            cropBoxes.splice(i, 1);
+
+            draw();
+
+            statusText.innerText =
+              "已刪除裁切框";
+
+            break;
+          }
         }
-      )
-    );
-  },
-  { passive:false }
-);
 
-canvas.addEventListener(
-  "touchmove",
-  (e) => {
-
-    e.preventDefault();
-
-    const touch =
-      e.touches[0];
-
-    canvas.dispatchEvent(
-      new MouseEvent(
-        "mousemove",
-        {
-
-          clientX:
-            touch.clientX,
-
-          clientY:
-            touch.clientY
-        }
-      )
-    );
-  },
-  { passive:false }
+      }, 700);
+  }
 );
 
 canvas.addEventListener(
   "touchend",
   () => {
 
-    window.dispatchEvent(
-      new MouseEvent(
-        "mouseup"
-      )
+    clearTimeout(
+      touchTimer
     );
   }
 );
@@ -591,11 +1019,9 @@ canvas.addEventListener(
 
 detectBtn.addEventListener(
   "click",
-  () => {
+  async () => {
 
-    autoDetect();
-
-    draw();
+    await autoDetect();
   }
 );
 
@@ -645,6 +1071,8 @@ exportBtn.addEventListener(
       let height =
         box.height;
 
+      // ===== LINE =====
+
       if (
         modeSelect.value ===
         "main"
@@ -680,24 +1108,26 @@ exportBtn.addEventListener(
       out.width = width;
       out.height = height;
 
-      const octx = 
-        out.getContext("2d", { 
-          alpha: true, 
-          colorSpace: "srgb", 
-          willReadFrequently: true 
-        });
+      const octx =
+        out.getContext(
+          "2d",
+          {
 
-      octx.imageSmoothingEnabled = 
-        true; 
-      octx.imageSmoothingQuality = 
+            alpha: true
+          }
+        );
+
+      octx.imageSmoothingEnabled =
+        true;
+
+      octx.imageSmoothingQuality =
         "high";
 
-      // ===== 透明背景 =====
-      octx.clearRect( 
-        0, 
-        0, 
-        out.width, 
-        out.height 
+      octx.clearRect(
+        0,
+        0,
+        out.width,
+        out.height
       );
 
       const sx =
@@ -721,11 +1151,14 @@ exportBtn.addEventListener(
         image.height;
 
       octx.drawImage(
+
         image,
+
         sx,
         sy,
         sw,
         sh,
+
         0,
         0,
         width,
@@ -737,19 +1170,26 @@ exportBtn.addEventListener(
           (resolve) => {
 
             out.toBlob(
+
               (blob) => {
-              resolve(blob);
+
+                resolve(blob);
+
               },
+
               "image/png",
+
               1.0
             );
           }
         );
 
       zip.file(
+
         `sticker_${
           i + 1
         }.png`,
+
         blob
       );
 
@@ -776,9 +1216,77 @@ exportBtn.addEventListener(
       });
 
     saveAs(
+
       zipBlob,
+
       "line-stickers.zip"
     );
+  }
+);
+
+window.addEventListener(
+  "keydown",
+  (e) => {
+
+    if (
+      e.key !== "Delete"
+    ) return;
+
+    cropBoxes =
+      cropBoxes.filter(
+        (_, index) =>
+
+          !selectedBoxes.includes(
+            index
+          )
+      );
+
+    selectedBoxes = [];
+
+    draw();
+  }
+);
+
+reanalyzeBtn.addEventListener(
+  "click",
+  async () => {
+
+    if (
+      selectedBoxes.length === 0
+    ) {
+
+      statusText.innerText =
+        "請先選擇裁切框";
+
+      return;
+    }
+
+    statusText.innerText =
+      "區域AI分析中...";
+
+    // ===== 刪除舊框 =====
+
+    selectedBoxes.sort(
+      (a, b) => b - a
+    );
+
+    selectedBoxes.forEach(
+      (i) => {
+
+        cropBoxes.splice(i, 1);
+      }
+    );
+
+    selectedBoxes = [];
+
+    // ===== 重新分析 =====
+
+    await autoDetect();
+
+    draw();
+
+    statusText.innerText =
+      "區域AI分析完成";
   }
 );
 

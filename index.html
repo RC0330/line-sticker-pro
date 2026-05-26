@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 
 <html lang="zh-Hant">
 
@@ -8,21 +8,110 @@
 
   <meta
     name="viewport"
-    content="
-      width=device-width,
-      initial-scale=1.0
-    "
+    content="width=device-width, initial-scale=1.0"
   />
 
   <title>
-    LINE貼圖 AI 工作站 PRO
+    LINE Sticker AI PRO
   </title>
+
+  <link
+    rel="manifest"
+    href="/manifest.webmanifest"
+  />
+
+  <meta
+    name="theme-color"
+    content="#0f172a"
+  />
 
 </head>
 
 <body>
 
-  <div id="app"></div>
+  <div id="app">
+
+    <div class="container">
+
+      <h1>
+        LINE貼圖 AI 工作站 PRO
+      </h1>
+
+      <!-- Toolbar -->
+
+      <div class="toolbar">
+
+        <input
+          type="file"
+          id="upload"
+          accept="image/*"
+        />
+
+        <button id="detectBtn">
+          AI偵測
+        </button>
+
+        <button id="addBtn">
+          新增框
+        </button>
+
+        <button id="reanalyzeBtn">
+          區域AI重分析
+        </button>
+
+        <button id="exportBtn">
+          匯出ZIP
+        </button>
+
+      </div>
+
+      <!-- Export Mode -->
+
+      <div class="toolbar">
+
+        <select id="mode">
+
+          <option value="main">
+            主貼圖 370x320
+          </option>
+
+          <option value="tab">
+            Tab 240x240
+          </option>
+
+          <option value="chat">
+            Chat 96x74
+          </option>
+
+          <option value="original">
+            原始尺寸
+          </option>
+
+        </select>
+
+      </div>
+
+      <!-- Status -->
+
+      <p id="status">
+        等待圖片...
+      </p>
+
+      <!-- Canvas -->
+
+      <div class="canvas-wrap">
+
+        <canvas id="canvas"></canvas>
+
+      </div>
+
+      <!-- Results -->
+
+      <div id="results"></div>
+
+    </div>
+
+  </div>
 
   <script
     type="module"
