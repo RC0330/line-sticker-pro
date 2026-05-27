@@ -5,7 +5,7 @@ import { saveAs } from "file-saver";
 
 import cv from "@techstark/opencv-js";
 
-// ===== App =====
+// ===== APP =====
 
 const app =
   document.querySelector("#app");
@@ -32,6 +32,10 @@ app.innerHTML = `
 
     <button id="addBtn">
       新增框
+    </button>
+
+    <button id="reanalyzeBtn">
+      區域AI重分析
     </button>
 
     <button id="exportBtn">
@@ -68,7 +72,11 @@ app.innerHTML = `
     等待圖片...
   </p>
 
-  <canvas id="canvas"></canvas>
+  <div class="canvas-wrap">
+
+    <canvas id="canvas"></canvas>
+
+  </div>
 
   <div id="results"></div>
 
@@ -129,12 +137,12 @@ let cropBoxes = [];
 
 let selectedBoxes = [];
 
+let dragging = -1;
+let resizing = -1;
+
 let selecting = false;
 
 let selectionRect = null;
-
-let dragging = -1;
-let resizing = -1;
 
 let offsetX = 0;
 let offsetY = 0;
@@ -189,6 +197,8 @@ upload.addEventListener(
 
         cropBoxes = [];
 
+        selectedBoxes = [];
+
         draw();
       };
 
@@ -196,7 +206,7 @@ upload.addEventListener(
   }
 );
 
-// ===== Load Image =====
+// ===== Load =====
 
 function loadImage(src) {
 
@@ -214,7 +224,7 @@ function loadImage(src) {
   );
 }
 
-// ===== OpenCV AI Detect =====
+// ===== AI Detect =====
 
 async function autoDetect() {
 
@@ -222,13 +232,11 @@ async function autoDetect() {
     return;
 
   statusText.innerText =
-    "OpenCV AI 分析中...";
+    "AI分析中...";
 
   try {
 
     cropBoxes = [];
-
-    // ===== temp canvas =====
 
     const temp =
       document.createElement(
@@ -252,8 +260,6 @@ async function autoDetect() {
       canvas.height
     );
 
-    // ===== OpenCV =====
-
     const src =
       cv.imread(temp);
 
@@ -269,66 +275,27 @@ async function autoDetect() {
     const hierarchy =
       new cv.Mat();
 
-    // ===== grayscale =====
-
     cv.cvtColor(
       src,
       gray,
-      cv.COLOR_RGBA2GRAY,
-      0
+      cv.COLOR_RGBA2GRAY
     );
 
-    // ===== threshold =====
-
     cv.threshold(
-
       gray,
-
       thresh,
-
       240,
-
       255,
-
       cv.THRESH_BINARY_INV
     );
 
-    // ===== morphology =====
-
-    const kernel =
-      cv.Mat.ones(
-        3,
-        3,
-        cv.CV_8U
-      );
-
-    cv.morphologyEx(
-
-      thresh,
-
-      thresh,
-
-      cv.MORPH_CLOSE,
-
-      kernel
-    );
-
-    // ===== contours =====
-
     cv.findContours(
-
       thresh,
-
       contours,
-
       hierarchy,
-
       cv.RETR_EXTERNAL,
-
       cv.CHAIN_APPROX_SIMPLE
     );
-
-    // ===== detect =====
 
     for (
       let i = 0;
@@ -342,22 +309,9 @@ async function autoDetect() {
       const rect =
         cv.boundingRect(cnt);
 
-      // ===== filter =====
-
       if (
         rect.width < 40 ||
         rect.height < 40
-      ) continue;
-
-      // ===== ratio =====
-
-      const ratio =
-        rect.width /
-        rect.height;
-
-      if (
-        ratio < 0.2 ||
-        ratio > 5
       ) continue;
 
       cropBoxes.push({
@@ -372,26 +326,6 @@ async function autoDetect() {
           rect.height
       });
     }
-
-    // ===== sort =====
-
-    cropBoxes.sort(
-      (a, b) => {
-
-        if (
-          Math.abs(
-            a.y - b.y
-          ) < 50
-        ) {
-
-          return a.x - b.x;
-        }
-
-        return a.y - b.y;
-      }
-    );
-
-    // ===== cleanup =====
 
     src.delete();
     gray.delete();
@@ -429,51 +363,30 @@ function draw() {
     return;
 
   ctx.drawImage(
-
     image,
-
     0,
     0,
-
     canvas.width,
     canvas.height
   );
 
   cropBoxes.forEach(
-  (box, index) => {
+    (box, index) => {
 
-    const selected =
-      selectedBoxes.includes(
-        index
-      );
+      const selected =
+        selectedBoxes.includes(
+          index
+        );
 
-    // ===== box =====
+      ctx.strokeStyle =
+        selected
+          ? "#00ffff"
+          : "#00ff88";
 
-    ctx.strokeStyle =
-      selected
-        ? "#00ffff"
-        : "#00ff88";
+      ctx.lineWidth =
+        selected ? 5 : 3;
 
-    ctx.lineWidth =
-      selected ? 5 : 3;
-
-    ctx.strokeRect(
-
-      box.x,
-      box.y,
-
-      box.width,
-      box.height
-    );
-
-    // ===== overlay =====
-
-    if (selected) {
-
-      ctx.fillStyle =
-        "rgba(0,255,255,0.12)";
-
-      ctx.fillRect(
+      ctx.strokeRect(
 
         box.x,
         box.y,
@@ -481,100 +394,111 @@ function draw() {
         box.width,
         box.height
       );
+
+      // ===== selected =====
+
+      if (selected) {
+
+        ctx.fillStyle =
+          "rgba(0,255,255,0.15)";
+
+        ctx.fillRect(
+
+          box.x,
+          box.y,
+
+          box.width,
+          box.height
+        );
+      }
+
+      // ===== resize =====
+
+      ctx.beginPath();
+
+      ctx.arc(
+
+        box.x +
+          box.width,
+
+        box.y +
+          box.height,
+
+        handleSize / 2,
+
+        0,
+        Math.PI * 2
+      );
+
+      ctx.fillStyle =
+        "#fff";
+
+      ctx.fill();
+
+      ctx.strokeStyle =
+        "#000";
+
+      ctx.stroke();
+
+      // ===== delete =====
+
+      ctx.fillStyle =
+        "#ff3b30";
+
+      ctx.fillRect(
+
+        box.x - 14,
+        box.y - 14,
+
+        28,
+        28
+      );
+
+      ctx.fillStyle =
+        "#fff";
+
+      ctx.font =
+        "20px sans-serif";
+
+      ctx.textAlign =
+        "center";
+
+      ctx.textBaseline =
+        "middle";
+
+      ctx.fillText(
+        "×",
+        box.x,
+        box.y + 1
+      );
     }
-
-    // ===== resize =====
-
-    ctx.beginPath();
-
-    ctx.arc(
-
-      box.x +
-        box.width,
-
-      box.y +
-        box.height,
-
-      handleSize / 2,
-
-      0,
-      Math.PI * 2
-    );
-
-    ctx.fillStyle =
-      "#ffffff";
-
-    ctx.fill();
-
-    ctx.strokeStyle =
-      "#000";
-
-    ctx.stroke();
-
-    // ===== delete X =====
-
-    const xSize = 28;
-
-    ctx.fillStyle =
-      "#ff3b30";
-
-    ctx.fillRect(
-
-      box.x - 14,
-      box.y - 14,
-
-      xSize,
-      xSize
-    );
-
-    ctx.fillStyle =
-      "#fff";
-
-    ctx.font =
-      "20px sans-serif";
-
-    ctx.textAlign =
-      "center";
-
-    ctx.textBaseline =
-      "middle";
-
-    ctx.fillText(
-
-      "×",
-
-      box.x,
-      box.y + 1
-    );
-  }
-);
-
-// ===== selection rect =====
-
-if (
-  selecting &&
-  selectionRect
-) {
-
-  ctx.strokeStyle =
-    "#00ffff";
-
-  ctx.lineWidth = 2;
-
-  ctx.setLineDash([8]);
-
-  ctx.strokeRect(
-
-    selectionRect.x,
-    selectionRect.y,
-
-    selectionRect.width,
-    selectionRect.height
   );
 
-  ctx.setLineDash([]);
-}
+  // ===== selection rect =====
 
+  if (
+    selecting &&
+    selectionRect
+  ) {
+
+    ctx.strokeStyle =
+      "#00ffff";
+
+    ctx.lineWidth = 2;
+
+    ctx.setLineDash([8]);
+
+    ctx.strokeRect(
+
+      selectionRect.x,
+      selectionRect.y,
+
+      selectionRect.width,
+      selectionRect.height
+    );
+
+    ctx.setLineDash([]);
+  }
 }
 
 // ===== Position =====
@@ -606,7 +530,7 @@ function getPos(e) {
   };
 }
 
-// ===== Mouse =====
+// ===== Mouse Down =====
 
 canvas.addEventListener(
   "mousedown",
@@ -615,9 +539,7 @@ canvas.addEventListener(
     const pos =
       getPos(e);
 
-     // ===== reset =====
-
-   if (!e.shiftKey) {
+    if (!e.shiftKey) {
 
       selectedBoxes = [];
     }
@@ -632,7 +554,7 @@ canvas.addEventListener(
       const box =
         cropBoxes[i];
 
-      // ===== delete button =====
+      // ===== delete =====
 
       if (
 
@@ -651,11 +573,6 @@ canvas.addEventListener(
       ) {
 
         cropBoxes.splice(i, 1);
-
-        selectedBoxes =
-          selectedBoxes.filter(
-            (v) => v !== i
-          );
 
         draw();
 
@@ -697,7 +614,7 @@ canvas.addEventListener(
         return;
       }
 
-      // ===== drag =====
+      // ===== select =====
 
       if (
 
@@ -713,14 +630,12 @@ canvas.addEventListener(
 
       ) {
 
-      // ===== select =====
+        if (
+          !selectedBoxes.includes(i)
+        ) {
 
-      if (
-        !selectedBoxes.includes(i)
-      ) {
-
-        selectedBoxes.push(i);
-      }
+          selectedBoxes.push(i);
+        }
 
         dragging = i;
 
@@ -730,27 +645,31 @@ canvas.addEventListener(
         offsetY =
           pos.y - box.y;
 
+        draw();
+
         return;
-
-        // ===== group selection =====
-
-        selecting = true;
-
-        selectionRect = {
-
-          x: pos.x,
-          y: pos.y,
-
-          width: 0,
-          height: 0
-        };
-
-        startX = pos.x;
-        startY = pos.y;
       }
     }
+
+    // ===== group select =====
+
+    selecting = true;
+
+    selectionRect = {
+
+      x: pos.x,
+      y: pos.y,
+
+      width: 0,
+      height: 0
+    };
+
+    startX = pos.x;
+    startY = pos.y;
   }
 );
+
+// ===== Mouse Move =====
 
 canvas.addEventListener(
   "mousemove",
@@ -759,7 +678,7 @@ canvas.addEventListener(
     const pos =
       getPos(e);
 
-    // ===== group select =====
+    // ===== selection =====
 
     if (
       selecting &&
@@ -775,7 +694,7 @@ canvas.addEventListener(
       draw();
 
       return;
-    } 
+    }
 
     // ===== drag =====
 
@@ -823,11 +742,11 @@ canvas.addEventListener(
   }
 );
 
+// ===== Mouse Up =====
+
 window.addEventListener(
   "mouseup",
   () => {
-
-    // ===== group selection =====
 
     if (
       selecting &&
@@ -899,119 +818,28 @@ window.addEventListener(
   }
 );
 
-// ===== Double Click Delete =====
+// ===== Delete =====
 
-canvas.addEventListener(
-  "dblclick",
+window.addEventListener(
+  "keydown",
   (e) => {
 
-    const pos =
-      getPos(e);
+    if (
+      e.key !== "Delete"
+    ) return;
 
-    for (
-      let i =
-        cropBoxes.length - 1;
-      i >= 0;
-      i--
-    ) {
+    cropBoxes =
+      cropBoxes.filter(
+        (_, index) =>
 
-      const box =
-        cropBoxes[i];
+          !selectedBoxes.includes(
+            index
+          )
+      );
 
-      if (
+    selectedBoxes = [];
 
-        pos.x > box.x &&
-        pos.x <
-          box.x + box.width &&
-
-        pos.y > box.y &&
-        pos.y <
-          box.y + box.height
-
-      ) {
-
-        cropBoxes.splice(i, 1);
-
-        draw();
-
-        statusText.innerText =
-          `已刪除裁切框`;
-
-        return;
-      }
-    }
-  }
-);
-
-// ===== Long Press Delete =====
-
-let touchTimer = null;
-
-canvas.addEventListener(
-  "touchstart",
-  (e) => {
-
-    const touch =
-      e.touches[0];
-
-    const rect =
-      canvas.getBoundingClientRect();
-
-    const x =
-      (touch.clientX - rect.left) *
-      (canvas.width / rect.width);
-
-    const y =
-      (touch.clientY - rect.top) *
-      (canvas.height / rect.height);
-
-    touchTimer =
-      setTimeout(() => {
-
-        for (
-          let i =
-            cropBoxes.length - 1;
-          i >= 0;
-          i--
-        ) {
-
-          const box =
-            cropBoxes[i];
-
-          if (
-
-            x > box.x &&
-            x <
-              box.x + box.width &&
-
-            y > box.y &&
-            y <
-              box.y + box.height
-
-          ) {
-
-            cropBoxes.splice(i, 1);
-
-            draw();
-
-            statusText.innerText =
-              "已刪除裁切框";
-
-            break;
-          }
-        }
-
-      }, 700);
-  }
-);
-
-canvas.addEventListener(
-  "touchend",
-  () => {
-
-    clearTimeout(
-      touchTimer
-    );
+    draw();
   }
 );
 
@@ -1039,6 +867,47 @@ addBtn.addEventListener(
     });
 
     draw();
+  }
+);
+
+// ===== Reanalyze =====
+
+reanalyzeBtn.addEventListener(
+  "click",
+  async () => {
+
+    if (
+      selectedBoxes.length === 0
+    ) {
+
+      statusText.innerText =
+        "請先選擇裁切框";
+
+      return;
+    }
+
+    statusText.innerText =
+      "區域AI分析中...";
+
+    selectedBoxes.sort(
+      (a, b) => b - a
+    );
+
+    selectedBoxes.forEach(
+      (i) => {
+
+        cropBoxes.splice(i, 1);
+      }
+    );
+
+    selectedBoxes = [];
+
+    await autoDetect();
+
+    draw();
+
+    statusText.innerText =
+      "區域AI分析完成";
   }
 );
 
@@ -1070,8 +939,6 @@ exportBtn.addEventListener(
 
       let height =
         box.height;
-
-      // ===== LINE =====
 
       if (
         modeSelect.value ===
@@ -1117,17 +984,11 @@ exportBtn.addEventListener(
           }
         );
 
-      octx.imageSmoothingEnabled =
-        true;
-
-      octx.imageSmoothingQuality =
-        "high";
-
       octx.clearRect(
         0,
         0,
-        out.width,
-        out.height
+        width,
+        height
       );
 
       const sx =
@@ -1212,7 +1073,7 @@ exportBtn.addEventListener(
     const zipBlob =
       await zip.generateAsync({
 
-        type:"blob"
+        type: "blob"
       });
 
     saveAs(
@@ -1221,72 +1082,6 @@ exportBtn.addEventListener(
 
       "line-stickers.zip"
     );
-  }
-);
-
-window.addEventListener(
-  "keydown",
-  (e) => {
-
-    if (
-      e.key !== "Delete"
-    ) return;
-
-    cropBoxes =
-      cropBoxes.filter(
-        (_, index) =>
-
-          !selectedBoxes.includes(
-            index
-          )
-      );
-
-    selectedBoxes = [];
-
-    draw();
-  }
-);
-
-reanalyzeBtn.addEventListener(
-  "click",
-  async () => {
-
-    if (
-      selectedBoxes.length === 0
-    ) {
-
-      statusText.innerText =
-        "請先選擇裁切框";
-
-      return;
-    }
-
-    statusText.innerText =
-      "區域AI分析中...";
-
-    // ===== 刪除舊框 =====
-
-    selectedBoxes.sort(
-      (a, b) => b - a
-    );
-
-    selectedBoxes.forEach(
-      (i) => {
-
-        cropBoxes.splice(i, 1);
-      }
-    );
-
-    selectedBoxes = [];
-
-    // ===== 重新分析 =====
-
-    await autoDetect();
-
-    draw();
-
-    statusText.innerText =
-      "區域AI分析完成";
   }
 );
 
